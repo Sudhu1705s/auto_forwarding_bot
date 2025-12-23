@@ -751,7 +751,7 @@ def main():
         logger.error("❌ MASTER_CHANNEL not set!")
         sys.exit(1)
         try:
-    master_id = int(MASTER_CHANNEL)
+            master_id = int(MASTER_CHANNEL)
 except ValueError:
     logger.error(f"❌ MASTER_CHANNEL must be integer: {MASTER_CHANNEL}")
     sys.exit(1)

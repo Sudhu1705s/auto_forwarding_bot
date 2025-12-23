@@ -750,85 +750,93 @@ def main():
     if not MASTER_CHANNEL:
         logger.error("❌ MASTER_CHANNEL not set!")
         sys.exit(1)
-        try:
-            master_id = int(MASTER_CHANNEL)
-except ValueError:
-    logger.error(f"❌ MASTER_CHANNEL must be integer: {MASTER_CHANNEL}")
-    sys.exit(1)
-
-# Initialize database
-init_database()
-
-# Migrate environment channels to database (one-time)
-migrate_env_channels_to_db()
-
-# Load channels
-reload_channels()
-
-if len(TARGET_CHANNELS) == 0:
-    logger.warning("⚠️ No channels loaded! Use /addchannel to add channels.")
-
-logger.info("=" * 60)
-logger.info("🚀 AUTO-COPY BOT V2.0 STARTING")
-logger.info(f"📡 Master Channel: {MASTER_CHANNEL}")
-logger.info(f"📤 Active Channels: {len(TARGET_CHANNELS)}")
-logger.info(f"👤 Admin ID: {ADMIN_ID or 'Not set'}")
-logger.info(f"⚙️ Batch Size: {BATCH_SIZE}")
-logger.info(f"💾 Database: {DB_FILE}")
-logger.info(f"🔒 Mode: COPY MODE - No 'Forwarded from' label!")
-logger.info("=" * 60)
-
-if TARGET_CHANNELS:
-    logger.info("📋 Channels preview:")
-    for i, ch in enumerate(TARGET_CHANNELS[:5], 1):
-        logger.info(f"  {i}. {ch}")
-    if len(TARGET_CHANNELS) > 5:
-        logger.info(f"  ...and {len(TARGET_CHANNELS) - 5} more")
+    
+    if not ADMIN_ID:
+        logger.warning("⚠️ ADMIN_ID not set - commands will be disabled!")
+    
+    try:
+        master_id = int(MASTER_CHANNEL)
+    except ValueError:
+        logger.error(f"❌ MASTER_CHANNEL must be integer: {MASTER_CHANNEL}")
+        sys.exit(1)
+    
+    # Initialize database
+    init_database()
+    
+    # Migrate environment channels to database (one-time)
+    migrate_env_channels_to_db()
+    
+    # Load channels
+    reload_channels()
+    
+    if len(TARGET_CHANNELS) == 0:
+        logger.warning("⚠️ No channels loaded! Use /addchannel to add channels.")
+    
     logger.info("=" * 60)
-
-# Build application
-app = Application.builder().token(FORWARD_BOT_TOKEN).build()
-
-# Add command handlers
-app.add_handler(CommandHandler("start", start_command))
-app.add_handler(CommandHandler("addchannel", add_channel_command))
-app.add_handler(CommandHandler("removechannel", remove_channel_command))
-app.add_handler(CommandHandler("listchannels", list_channels_command))
-app.add_handler(CommandHandler("stats", stats_command))
-app.add_handler(CommandHandler("test", test_command))
-app.add_handler(CommandHandler("reload", reload_command))
-app.add_handler(CommandHandler("setbatch", setbatch_command))
-app.add_handler(CommandHandler("exportchannels", export_channels_command))
-
-# Add message handler for copying
-app.add_handler(MessageHandler(
-    filters.Chat(chat_id=master_id) & filters.ALL,
-    forward_message
-))
-
-# Add error handler
-app.add_error_handler(error_handler)
-
-# Start heartbeat
-async def post_init(application):
-    asyncio.create_task(heartbeat())
-
-app.post_init = post_init
-
-logger.info("✅ Copy bot is running in stealth mode!")
-logger.info("⏳ Waiting for messages and commands...")
-logger.info("🔒 Messages will appear as original posts (no forwarding label)")
-
-try:
-    app.run_polling(allowed_updates=['channel_post', 'message'])
-except KeyboardInterrupt:
+    logger.info("🚀 AUTO-COPY BOT V2.0 STARTING")
+    logger.info(f"📡 Master Channel: {MASTER_CHANNEL}")
+    logger.info(f"📤 Active Channels: {len(TARGET_CHANNELS)}")
+    logger.info(f"👤 Admin ID: {ADMIN_ID or 'Not set'}")
+    logger.info(f"⚙️ Batch Size: {BATCH_SIZE}")
+    logger.info(f"💾 Database: {DB_FILE}")
+    logger.info(f"🔒 Mode: COPY MODE - No 'Forwarded from' label!")
     logger.info("=" * 60)
-    logger.info("🛑 SHUTDOWN INITIATED")
-    logger.info(f"📊 Final Stats:")
-    logger.info(f"   Messages Processed: {stats['messages_processed']}")
-    logger.info(f"   Total Copies: {stats['total_forwards']}")
-    logger.info(f"   Success Rate: {(stats['successful_forwards']/stats['total_forwards']*100) if stats['total_forwards'] > 0 else 0:.1f}%")
-    logger.info("=" * 60)
-except Exception as e:
-    logger.error(f"❌ Fatal error: {e}")
-    sys.exit(1)
+    
+    if TARGET_CHANNELS:
+        logger.info("📋 Channels preview:")
+        for i, ch in enumerate(TARGET_CHANNELS[:5], 1):
+            logger.info(f"  {i}. {ch}")
+        if len(TARGET_CHANNELS) > 5:
+            logger.info(f"  ...and {len(TARGET_CHANNELS) - 5} more")
+        logger.info("=" * 60)
+    
+    # Build application
+    app = Application.builder().token(FORWARD_BOT_TOKEN).build()
+    
+    # Add command handlers
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("addchannel", add_channel_command))
+    app.add_handler(CommandHandler("removechannel", remove_channel_command))
+    app.add_handler(CommandHandler("listchannels", list_channels_command))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("test", test_command))
+    app.add_handler(CommandHandler("reload", reload_command))
+    app.add_handler(CommandHandler("setbatch", setbatch_command))
+    app.add_handler(CommandHandler("exportchannels", export_channels_command))
+    
+    # Add message handler for copying
+    app.add_handler(MessageHandler(
+        filters.Chat(chat_id=master_id) & filters.ALL,
+        forward_message
+    ))
+    
+    # Add error handler
+    app.add_error_handler(error_handler)
+    
+    # Start heartbeat
+    async def post_init(application):
+        asyncio.create_task(heartbeat())
+    
+    app.post_init = post_init
+    
+    logger.info("✅ Copy bot is running in stealth mode!")
+    logger.info("⏳ Waiting for messages and commands...")
+    logger.info("🔒 Messages will appear as original posts (no forwarding label)")
+    
+    try:
+        app.run_polling(allowed_updates=['channel_post', 'message'])
+    except KeyboardInterrupt:
+        logger.info("=" * 60)
+        logger.info("🛑 SHUTDOWN INITIATED")
+        logger.info(f"📊 Final Stats:")
+        logger.info(f"   Messages Processed: {stats['messages_processed']}")
+        logger.info(f"   Total Copies: {stats['total_forwards']}")
+        logger.info(f"   Success Rate: {(stats['successful_forwards']/stats['total_forwards']*100) if stats['total_forwards'] > 0 else 0:.1f}%")
+        logger.info("=" * 60)
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

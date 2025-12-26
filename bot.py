@@ -3,10 +3,12 @@ import sqlite3
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError, RetryAfter, TimedOut
+from telegram.error import TelegramError, RetryAfter, TimedOut, NetworkError
+from telegram.request import HTTPXRequest
 import logging
 import os
 import sys
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -142,7 +144,7 @@ def migrate_env_channels_to_db():
     env_channels = [ch.strip() for ch in env_channels if ch.strip()]
     
     if env_channels:
-        logger.info(f"🔄 Migrating {len(env_channels)} channels from environment to database...")
+        logger.info(f"📄 Migrating {len(env_channels)} channels from environment to database...")
         for ch_id in env_channels:
             add_channel_to_db(ch_id, "Imported from env")
         logger.info("✅ Migration complete!")
@@ -338,7 +340,7 @@ async def forward_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         batch = TARGET_CHANNELS[i:i + BATCH_SIZE]
         batch_num = (i // BATCH_SIZE) + 1
         
-        logger.info(f"📄 Batch {batch_num}/{total_batches}: Processing {len(batch)} channels...")
+        logger.info(f"🔄 Batch {batch_num}/{total_batches}: Processing {len(batch)} channels...")
         
         # Parallel copying within batch
         tasks = [copy_message_to_channel(context.bot, message, ch_id) for ch_id in batch]
@@ -790,8 +792,17 @@ def main():
             logger.info(f"  ...and {len(TARGET_CHANNELS) - 5} more")
         logger.info("=" * 60)
     
-    # Build application
-    app = Application.builder().token(FORWARD_BOT_TOKEN).build()
+    # ✅ FIX 1: Configure longer timeouts
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0
+    )
+    
+    # Build application with custom request
+    app = Application.builder().token(FORWARD_BOT_TOKEN).request(request).build()
     
     # Add command handlers
     app.add_handler(CommandHandler("start", start_command))
@@ -823,19 +834,41 @@ def main():
     logger.info("⏳ Waiting for messages and commands...")
     logger.info("🔒 Messages will appear as original posts (no forwarding label)")
     
-    try:
-        app.run_polling(allowed_updates=['channel_post', 'message'])
-    except KeyboardInterrupt:
-        logger.info("=" * 60)
-        logger.info("🛑 SHUTDOWN INITIATED")
-        logger.info(f"📊 Final Stats:")
-        logger.info(f"   Messages Processed: {stats['messages_processed']}")
-        logger.info(f"   Total Copies: {stats['total_forwards']}")
-        logger.info(f"   Success Rate: {(stats['successful_forwards']/stats['total_forwards']*100) if stats['total_forwards'] > 0 else 0:.1f}%")
-        logger.info("=" * 60)
-    except Exception as e:
-        logger.error(f"❌ Fatal error: {e}")
-        sys.exit(1)
+    # ✅ FIX 2: Auto-restart on timeout/error
+    while True:
+        try:
+            app.run_polling(allowed_updates=['channel_post', 'message'])
+            break  # Exit loop if stopped normally
+        except TimedOut:
+            stats['restarts'] += 1
+            logger.warning(f"⏱️ TIMEOUT ERROR - Auto-restarting (restart #{stats['restarts']})...")
+            time.sleep(5)
+            logger.info("🔄 Reconnecting...")
+            continue
+        except NetworkError as e:
+            stats['restarts'] += 1
+            logger.warning(f"🌐 NETWORK ERROR: {e} - Auto-restarting (restart #{stats['restarts']})...")
+            time.sleep(10)
+            logger.info("🔄 Reconnecting...")
+            continue
+        except KeyboardInterrupt:
+            logger.info("=" * 60)
+            logger.info("🛑 SHUTDOWN INITIATED")
+            logger.info(f"📊 Final Stats:")
+            logger.info(f"   Messages Processed: {stats['messages_processed']}")
+            logger.info(f"   Total Copies: {stats['total_forwards']}")
+            logger.info(f"   Restarts: {stats['restarts']}")
+            logger.info("=" * 60)
+            break
+        except Exception as e:
+            stats['restarts'] += 1
+            logger.error(f"❌ UNEXPECTED ERROR: {e} - Auto-restarting (restart #{stats['restarts']})...")
+            time.sleep(15)
+            if stats['restarts'] > 10:
+                logger.error("❌ Too many restarts! Exiting...")
+                sys.exit(1)
+            logger.info("🔄 Reconnecting...")
+            continue
 
 
 if __name__ == "__main__":

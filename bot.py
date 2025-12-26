@@ -36,7 +36,8 @@ stats = {
     'successful_forwards': 0,
     'failed_forwards': 0,
     'last_forward_time': None,
-    'messages_processed': 0
+    'messages_processed': 0,
+    'restarts': 0 
 }
 
 # Global variable to store active channels
@@ -159,7 +160,7 @@ def reload_channels():
 
 # ==================== FORWARDING FUNCTIONS ====================
 
-async def copy_message_to_channel(bot, message, channel_id, retries=3):
+async def copy_message_to_channel(bot, message, channel_id, retries=5):
     """Copy message to a single channel (NO 'Forwarded from' label) with retry logic"""
     for attempt in range(retries):
         try:
@@ -795,10 +796,10 @@ def main():
     # ✅ FIX 1: Configure longer timeouts
     request = HTTPXRequest(
         connection_pool_size=8,
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0
+        connect_timeout=60.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0
     )
     
     # Build application with custom request
@@ -848,7 +849,7 @@ def main():
         except NetworkError as e:
             stats['restarts'] += 1
             logger.warning(f"🌐 NETWORK ERROR: {e} - Auto-restarting (restart #{stats['restarts']})...")
-            time.sleep(10)
+            time.sleep(20)
             logger.info("🔄 Reconnecting...")
             continue
         except KeyboardInterrupt:
